@@ -1,6 +1,6 @@
 # SKILL: mcp_excel — Excel Generation & Analysis
 
-> **Version**: 3.0 | **MCP Endpoint**: `http://localhost:5003/mcp` | **Tools**: 25 | **npm test**: 43/43 PASS
+> **Version**: 3.1 | **MCP Endpoint**: `http://localhost:5003/mcp` | **Tools**: 25 | **npm test**: 43/43 PASS
 
 ## Mô tả & Khi nào kích hoạt
 
@@ -47,8 +47,8 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 1. create_workbook
 2. Sheet "DuLieu":   write_data_to_excel → format_range header → apply_formula tổng
 3. Sheet "TongHop":  create_worksheet → write_data_to_excel → merge_cells tiêu đề → format_range
-4. Sheet "BieuDo":   create_worksheet → create_chart (data_range trỏ về sheet DuLieu)
-5. [Tùy] Sheet "PivotTable": create_worksheet → create_pivot_table
+4. Sheet "BieuDo":   create_worksheet → write_data_to_excel dữ liệu chart → create_chart trên sheet đó
+5. [Tùy] Pivot:      create_pivot_table trên worksheet đang chứa data_range nguồn
 ```
 
 ### C. Đọc & Phân tích file có sẵn
@@ -121,9 +121,8 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 | Tool | Args bắt buộc | Ghi chú quan trọng |
 |------|--------------|-------------------|
 | `create_table` | `filepath`, `sheet_name`, `data_range` | `data_range` = `"A1:D10"` (không phải start/end_cell riêng lẻ) |
-| `create_chart` | `filepath`, `sheet_name`, `chart_type`, `data_range`, `title` | `chart_type`: `"bar"`, `"line"`, `"pie"`, `"column"` |
-| `create_pivot_table` | `filepath`, `data_sheet`, `pivot_sheet`, `rows`, `cols`, `values` | `rows`/`cols`/`values` = tên cột |
-| `get_data_validation_info` | `filepath`, `sheet_name` | — |
+| `create_chart` | `filepath`, `sheet_name`, `data_range`, `chart_type`, `target_cell` | Tùy chọn: `title`, `x_axis`, `y_axis`; `chart_type`: `"bar"`, `"line"`, `"pie"`, `"scatter"`, `"area"` |
+| `create_pivot_table` | `filepath`, `sheet_name`, `data_range`, `rows`, `values` | Tùy chọn: `columns`, `agg_func`; KHÔNG dùng `data_sheet`, `pivot_sheet`, `cols` |
 
 ---
 
@@ -131,7 +130,7 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 
 ### Báo cáo doanh thu Q1 (chuẩn production)
 
-```json
+```jsonc
 // 1. Tạo workbook
 { "name": "create_workbook", "arguments": { "filepath": "doanh_thu_q1_2026.xlsx" } }
 
@@ -165,34 +164,41 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
     "filepath": "doanh_thu_q1_2026.xlsx", "sheet_name": "DuLieu",
     "cell": "C5", "formula": "=SUM(C2:C4)"
 }}
-{ "name": "apply_formula", "arguments": { ..., "cell": "E5", "formula": "=SUM(E2:E4)" }}
+{ "name": "apply_formula", "arguments": {
+    "filepath": "doanh_thu_q1_2026.xlsx", "sheet_name": "DuLieu",
+    "cell": "E5", "formula": "=SUM(E2:E4)"
+}}
 
-// 6. Tạo biểu đồ cột doanh thu
+// 6. Tạo biểu đồ doanh thu
 { "name": "create_chart", "arguments": {
     "filepath": "doanh_thu_q1_2026.xlsx", "sheet_name": "DuLieu",
-    "chart_type": "column",
     "data_range": "A1:C4",
-    "title": "Doanh Thu Q1 2026 Theo Tháng"
+    "chart_type": "bar",
+    "target_cell": "G2",
+    "title": "Doanh Thu Q1 2026 Theo Tháng",
+    "x_axis": "Tháng",
+    "y_axis": "Doanh Thu"
 }}
 ```
 
 ### Pivot Table phân tích theo vùng
 
-```json
-// Cần data_sheet có sẵn dữ liệu với các cột: Vùng, Sản phẩm, Doanh Thu
+```jsonc
+// Cần worksheet "DuLieu" có data_range với header: Vùng, Sản phẩm, Doanh Thu
 { "name": "create_pivot_table", "arguments": {
     "filepath": "phan_tich_2026.xlsx",
-    "data_sheet": "DuLieu",
-    "pivot_sheet": "PivotTongHop",
+    "sheet_name": "DuLieu",
+    "data_range": "A1:C100",
     "rows": ["Vùng"],
-    "cols": ["Sản phẩm"],
-    "values": ["Doanh Thu"]
+    "values": ["Doanh Thu"],
+    "columns": ["Sản phẩm"],
+    "agg_func": "sum"
 }}
 ```
 
 ### Validate công thức phức tạp trước khi dùng
 
-```json
+```jsonc
 { "name": "validate_formula_syntax", "arguments": {
     "formula": "=IF(C2>0,C2/B2*100,0)"
 }}
@@ -201,7 +207,7 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 
 ### Tiêu đề span nhiều cột (merge + format)
 
-```json
+```jsonc
 { "name": "merge_cells", "arguments": {
     "filepath": "bao_cao.xlsx", "sheet_name": "TongHop",
     "start_cell": "A1", "end_cell": "E1"
@@ -253,8 +259,8 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 |-----------|-------------|-------|
 | Tạo bảng có filter/sort | `create_table` | Tự zebra, tự filter — không cần format từng hàng |
 | Tạo bảng tĩnh | `write_data_to_excel` + `format_range` | Kiểm soát hoàn toàn |
-| Phân tích đa chiều | `create_pivot_table` | Tổng hợp tự động theo rows/cols |
-| Trực quan hóa | `create_chart` | Dùng `"column"` cho dữ liệu theo thời gian, `"pie"` cho tỷ lệ |
+| Phân tích đa chiều | `create_pivot_table` | Tổng hợp tự động theo `rows`/`columns` |
+| Trực quan hóa | `create_chart` | Dùng `"bar"` cho so sánh nhóm, `"line"` cho chuỗi thời gian, `"pie"` cho tỷ lệ |
 | Tiêu đề span | `merge_cells` + `write_data_to_excel` | Gộp trước, ghi sau |
 | Nhiều phần báo cáo | Nhiều `create_worksheet` | Mỗi sheet = 1 chủ đề |
 | Template sao chép | `copy_worksheet` | Tạo sheet mẫu rồi copy |
@@ -272,6 +278,9 @@ Skill tạo, đọc, phân tích và format file Excel (.xlsx) **offline hoàn t
 | `validation error: start_row Field required` | Dùng `row_index` thay vì `start_row` | Dùng đúng: `start_row` |
 | `validation error: start_col Field required` | Dùng `col_index` thay vì `start_col` | Dùng đúng: `start_col` |
 | `validation error: data_range Field required` | Dùng `start_cell`/`end_cell` cho `create_table` | Dùng đúng: `data_range: "A1:D10"` |
+| `validation error: target_cell Field required` | Thiếu vị trí đặt chart khi gọi `create_chart` | Thêm `target_cell: "G2"` |
+| `validation error: sheet_name Field required` | Dùng `data_sheet`/`pivot_sheet` cho `create_pivot_table` | Dùng đúng: `sheet_name` + `data_range` |
+| `validation error: extra_forbidden` hoặc `cols` bị bỏ qua | Dùng `cols` thay vì `columns` cho pivot | Dùng đúng: `columns: ["Tên cột"]` |
 | `source_start Field required` | Dùng `source_range` cho `copy_range` | Dùng đúng: `source_start`, `source_end`, `target_start` |
 | `Extension không hỗ trợ` | File không phải `.xlsx` | Đổi tên sang `.xlsx` |
 | `data phải là list of lists` | Gửi list of dicts | Chuyển về `[[h1,h2],[v1,v2]]` |
@@ -326,7 +335,7 @@ Pipeline AI nên thực hiện:
 4. [Sheet 3] Biểu đồ phòng ban
    create_worksheet { sheet_name: "PhanBo" }
    write_data_to_excel { data: [[Phòng Ban, Số NV], [IT, 12], [HR, 5], ...] }
-   create_chart { chart_type: "pie", data_range: "A1:B{n}", title: "Phân Bổ Nhân Sự Theo Phòng Ban" }
+   create_chart { chart_type: "pie", data_range: "A1:B{n}", target_cell: "D2", title: "Phân Bổ Nhân Sự Theo Phòng Ban" }
 
 5. Thông báo: "Đã tạo file bao_cao_nhan_su_20260427.xlsx — download tại /download/bao_cao_nhan_su_20260427.xlsx"
 ```
