@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OpenCode internal (do not commit)
+.omx/
+
+# Runtime data / output files
+excel_files/*.xlsx
+excel_files/*.xlsm
+excel_files/*.xltx
+excel_files/*.xltm
+excel_files/*.xlam
+excel_files/*.csv
+output/*.xlsx
+output/*.xlsm
+output/*.xltx
+output/*.xltm
+output/*.xlam
+output/*.csv
+
+# Keep the directories themselves
+!excel_files/.gitkeep
+!output/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# uvx cache (Python)
+__pycache__/
+*.pyc
+.uv/

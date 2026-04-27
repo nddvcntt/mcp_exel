@@ -1,0 +1,35 @@
+services:
+  mcp_excel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp_excel
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5003
+      EXCEL_MCP_INTERNAL_PORT: 5013
+      EXCEL_MCP_SHELL: "false"
+      EXCEL_FILES_PATH: /data/excel_files
+      OUTPUT_DIR: /data/output
+      FILE_TTL_DAYS: 5
+      MAX_FILE_SIZE: 52428800
+      # 10 phút idle timeout (giảm từ 15 phút để tiết kiệm RAM khi không dùng)
+      IDLE_TIMEOUT_MS: 600000
+      # Multer upload limit (50MB)
+      MULTER_MAX_FILE_SIZE: 52428800
+    ports:
+      - "5003:5003"
+    volumes:
+      - ./excel_files:/data/excel_files
+      - ./output:/data/output
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1g
