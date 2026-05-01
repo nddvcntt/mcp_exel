@@ -93,7 +93,7 @@ function stopSubprocess() {
 
 // ── Wait for subprocess ready (exponential backoff) ───────
 
-async function waitForReady(maxWaitMs = 90000) {
+async function waitForReady(maxWaitMs = 240000) {
   const start   = Date.now();
   let   delayMs = 1000;
   console.log(`[ExcelProxy] Chờ subprocess sẵn sàng (tối đa ${maxWaitMs / 1000}s)...`);
@@ -103,7 +103,7 @@ async function waitForReady(maxWaitMs = 90000) {
       const r = await axios.post(`${INTERNAL_URL}/mcp`, {
         jsonrpc: '2.0', id: 1, method: 'initialize',
         params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'probe', version: '1' } }
-      }, { timeout: 3000, headers: { 'Content-Type': 'application/json' } });
+      }, { timeout: 3000, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' } });
       if (r.status >= 200 && r.status < 500) return true;
     } catch (e) {
       // 400/405 → server đang chạy
@@ -186,7 +186,7 @@ async function ensureRunning() {
 
   // Đợi thêm nếu đang trong quá trình start
   if (isStarting) {
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 480; i++) {
       await new Promise(r => setTimeout(r, 500));
       if (ready) break;
     }
@@ -243,7 +243,7 @@ async function probeReady() {
     const r = await axios.post(`${INTERNAL_URL}/mcp`, {
       jsonrpc: '2.0', id: 99, method: 'initialize',
       params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'probe', version: '1' } }
-    }, { timeout: 3000, headers: { 'Content-Type': 'application/json' } });
+    }, { timeout: 3000, headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' } });
     if (r.status >= 200 && r.status < 500) { ready = true; return true; }
   } catch (e) {
     if (e.response && e.response.status >= 400) { ready = true; return true; }

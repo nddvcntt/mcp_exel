@@ -92,10 +92,12 @@ setInterval(() => {
 // ── GET /health ───────────────────────────────────────────
 
 app.get('/health', async (req, res) => {
+  const quick = req.query.quick === '1' || req.query.quick === 'true';
   if (!excelProxy.isReady()) await excelProxy.probeReady();
+  if (!quick && !excelProxy.isReady()) await excelProxy.ensureRunning();
   const subprocessReady = excelProxy.isReady();
 
-  // Lấy tool list (cached, non-blocking nếu không ready)
+  // Lấy tool list sau warm-up để health phản ánh khả năng dùng thật của MCP.
   const tools = subprocessReady ? await excelProxy.getToolsList() : [];
   const files  = fileMgr.listFiles();
 

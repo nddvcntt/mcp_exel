@@ -22,6 +22,10 @@ RUN apt-get update \
   && python3 -m pip install --break-system-packages --no-cache-dir uv \
   && rm -rf /var/lib/apt/lists/*
 
+# Warm uvx dependency cache at build time so first /health does not time out
+# while downloading excel-mcp-server runtime packages.
+RUN uvx excel-mcp-server --help >/dev/null 2>&1 || true
+
 # Copy node_modules từ builder (không build lại)
 COPY --from=builder /build/node_modules ./node_modules
 
