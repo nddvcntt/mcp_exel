@@ -89,6 +89,100 @@ setInterval(() => {
   for (const [ip, b] of rlMap.entries()) { if (b.reset < now) rlMap.delete(ip); }
 }, 60000);
 
+function parseJsonRpcPayload(data) {
+  const text = Buffer.isBuffer(data)
+    ? data.toString('utf8')
+    : typeof data === 'string'
+      ? data
+      : JSON.stringify(data || '');
+
+  if (!text.trim()) return null;
+
+  const sseMatch = text.match(/^data:\s*(.+)$/m);
+  const payload = sseMatch ? sseMatch[1] : text;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+function mcpRequestMethod(body) {
+  const parsed = parseJsonRpcPayload(body);
+  return typeof parsed?.method === 'string' ? parsed.method : '';
+}
+
+function isSessionError(resp) {
+  const status = resp?.status || 0;
+  const parsed = parseJsonRpcPayload(resp?.data);
+  const error = parsed?.error || {};
+  const message = String(error.message || parsed?.message || resp?.data || '').toLowerCase();
+  return (
+    error.code === -32001 ||
+    status === 404 ||
+    status === 410 ||
+    (message.includes('session') && (
+      message.includes('expired') ||
+      message.includes('invalid') ||
+      message.includes('not found') ||
+      message.includes('timeout') ||
+      message.includes('terminated') ||
+      message.includes('closed')
+    ))
+  );
+}
+
+async function initializeUpstreamSession() {
+  const initResp = await axios.post(`${excelProxy.getInternalUrl()}/mcp`, {
+    jsonrpc: '2.0',
+    id: Date.now(),
+    method: 'initialize',
+    params: {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'mcp_excel_proxy', version: '2.0.0' },
+    },
+  }, {
+    timeout: 10000,
+    validateStatus: () => true,
+    responseType: 'text',
+    transformResponse: [(data) => data],
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+    },
+  });
+
+  if (initResp.status >= 400) {
+    throw new Error(`initialize upstream failed HTTP ${initResp.status}`);
+  }
+  return initResp.headers['mcp-session-id'] || initResp.headers['x-mcp-session-id'] || null;
+}
+
+async function postToUpstreamMcp(body, forwardHeaders) {
+  return axios.post(excelProxy.getInternalUrl() + '/mcp', body, {
+    headers: {
+      'Content-Type': forwardHeaders['content-type'] || 'application/json',
+      'Accept': forwardHeaders.accept || 'application/json, text/event-stream',
+      ...(forwardHeaders['mcp-session-id'] ? { 'mcp-session-id': forwardHeaders['mcp-session-id'] } : {}),
+      ...(forwardHeaders['last-event-id'] ? { 'last-event-id': forwardHeaders['last-event-id'] } : {}),
+    },
+    responseType: 'text',
+    timeout: 120000,
+    transformResponse: [(data) => data],
+    validateStatus: () => true,
+  });
+}
+
+function sendMcpProxyResponse(res, resp) {
+  res.status(resp.status);
+  const forwardResponseHeaders = ['content-type', 'mcp-session-id', 'x-mcp-session-id'];
+  for (const h of forwardResponseHeaders) {
+    if (resp.headers[h]) res.setHeader(h, resp.headers[h]);
+  }
+  res.send(resp.data || '');
+}
+
 // ── GET /health ───────────────────────────────────────────
 
 app.get('/health', async (req, res) => {
@@ -248,32 +342,20 @@ app.post('/mcp', rateLimitMcp, async (req, res) => {
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
 
     const forwardHeaders = {};
+    if (req.headers['content-type'])    forwardHeaders['content-type']    = req.headers['content-type'];
     if (req.headers['mcp-session-id']) forwardHeaders['mcp-session-id'] = req.headers['mcp-session-id'];
     if (req.headers['accept'])         forwardHeaders['accept']          = req.headers['accept'];
     if (req.headers['last-event-id'])  forwardHeaders['last-event-id']   = req.headers['last-event-id'];
 
-    const resp = await axios.post(excelProxy.getInternalUrl() + '/mcp', body, {
-      headers: {
-        'Content-Type': req.headers['content-type'] || 'application/json',
-        'Accept': req.headers['accept'] || 'application/json, text/event-stream',
-        ...forwardHeaders,
-      },
-      responseType : 'stream',
-      timeout      : 120000,
-      validateStatus: () => true,
-    });
-
-    res.status(resp.status);
-    const forwardResponseHeaders = ['content-type', 'mcp-session-id', 'transfer-encoding'];
-    for (const h of forwardResponseHeaders) {
-      if (resp.headers[h]) res.setHeader(h, resp.headers[h]);
+    let resp = await postToUpstreamMcp(body, forwardHeaders);
+    if (mcpRequestMethod(body) !== 'initialize' && isSessionError(resp)) {
+      console.warn('[mcp_excel] Upstream session expired; reinitializing and retrying once.');
+      const freshSessionId = await initializeUpstreamSession();
+      if (freshSessionId) forwardHeaders['mcp-session-id'] = freshSessionId;
+      else delete forwardHeaders['mcp-session-id'];
+      resp = await postToUpstreamMcp(body, forwardHeaders);
     }
-
-    resp.data.pipe(res);
-    resp.data.on('error', (err) => {
-      if (!res.headersSent) res.status(500).end();
-      console.error('[mcp_excel] Proxy stream error:', err.message);
-    });
+    sendMcpProxyResponse(res, resp);
 
   } catch (err) {
     console.error('[mcp_excel] POST /mcp error:', err.message);
